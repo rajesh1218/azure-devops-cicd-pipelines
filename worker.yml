@@ -1,0 +1,45 @@
+trigger:
+  paths:
+    include:
+    - worker/*
+resources:
+  repositories:
+  - repository: self
+variables:
+- name: dockerRegistryServiceConnection
+  value: '4896bb95-e67d-4c0e-beff-9e8f8ee22a99'
+- name: imageRepository
+  value: 'cicdproject/worker'
+- name: containerRegistry
+  value: 'rjalluacr.azurecr.io'
+- name: dockerfilePath
+  value: '$(Build.SourcesDirectory)/worker/Dockerfile'
+- name: tag
+  value: '$(Build.BuildId)'
+- name: vmImageName
+  value: azureagent
+stages:
+- stage: Build
+  displayName: Build and push stage
+  jobs:
+  - job: Build
+    displayName: Build
+    pool:
+      name: $(vmImageName)
+    steps:
+    - task: Docker@2
+      displayName: Build an image
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'build'
+        Dockerfile: '$(dockerfilePath)'
+        tags: '$(tag)'
+    - task: Docker@2
+      displayName: Push an image to container registry
+      inputs:
+        containerRegistry: '$(dockerRegistryServiceConnection)'
+        repository: '$(imageRepository)'
+        command: 'push'
+        tags: '$(tag)'
+
