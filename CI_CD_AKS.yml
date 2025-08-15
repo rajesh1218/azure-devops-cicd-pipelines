@@ -1,0 +1,128 @@
+
+trigger:
+  none
+
+pool:
+  name: devpool
+  demands:
+    - agent.name -equals Agent01
+
+stages:
+  - stage: compile
+    displayName: 'Maven Complile'
+    jobs:
+      - job: maven_compile
+        steps:
+          - task: Maven@4
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'compile'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              javaHomeOption: 'JDKVersion'
+              mavenVersionOption: 'Default'
+              mavenAuthenticateFeed: false
+              effectivePomSkip: false
+              sonarQubeRunAnalysis: false
+  - stage: trivy_fs_scan
+    displayName: 'Trivy Fs Scan'
+    jobs:
+        - job: trivy_fs_scan
+          displayName: 'Trivy Fs Scan'
+          steps:
+            - task: CmdLine@2
+              inputs:
+                script: 'trivy fs --format table -o fs.html .'
+  - stage: sonar_analysis
+    displayName: 'Sonar_Analysis'
+    jobs:
+      - job: sonar_analysis
+        steps:
+          - task: SonarQubePrepare@7
+            inputs:
+              SonarQube: 'sonar-con'
+              scannerMode: 'cli'
+              configMode: 'manual'
+              cliProjectKey: 'bankapp'
+              cliProjectName: 'bankapp'
+              cliSources: '.'
+              extraProperties: 'sonar.java.binaries=.'
+          - task: SonarQubeAnalyze@7
+            inputs:
+              jdkversion: 'JAVA_HOME_17_X64'
+
+  - stage: maven_publish
+    displayName: 'Maven Publish'
+    jobs:
+      - job: maven_publish
+        displayName: 'Maven Publish'
+        steps:
+          - task: MavenAuthenticate@0
+            inputs:
+              artifactsFeeds: 'maven-feed'
+          - task: Maven@4
+            inputs:
+              azureSubscription: 'Azure subscription 1(8a71abf5-069e-43d0-bdad-06537dc70897)'
+              mavenPomFile: 'pom.xml'
+              goals: 'deploy'
+              options: '-Dmaven.test.skip=true'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              javaHomeOption: 'JDKVersion'
+              mavenVersionOption: 'Default'
+              mavenAuthenticateFeed: false
+              effectivePomSkip: false
+              sonarQubeRunAnalysis: false
+                          
+  - stage: docker_build
+    displayName: 'Docker Build'
+    jobs:
+      - job: docker_build
+        displayName: 'Docker Build'
+        steps:
+         - task: CmdLine@2
+           inputs:
+             script: 'mvn clean package -Dmaven.test.skip=true'
+         - task: Docker@2
+           inputs:
+             containerRegistry: 'docker-con'
+             repository: 'dev'
+             command: 'build'
+             Dockerfile: '**/Dockerfile'
+             tags: 'latest'
+
+  - stage: trivy_image_scan
+    displayName: 'Trivy Fs Scan'
+    jobs:
+        - job: trivy_image_scan
+          displayName: 'Trivy Image Scan'
+          steps:
+            - task: CmdLine@2
+              inputs:
+                script: 'trivy image --format table -o image.html devpprojectrajesh.azurecr.io/dev:latest'
+  - stage: docker_push
+    displayName: 'Docker push'
+    jobs:
+      - job: docker_push
+        displayName: 'Docker Push'
+        steps:
+         - task: Docker@2
+           inputs:
+             containerRegistry: 'docker-con'
+             repository: 'dev'
+             command: 'push'
+             tags: 'latest'  
+
+  - stage: deploy_aks
+    displayName: 'Deploy To AKS'
+    jobs:
+      - job: deploy
+        displayName: 'Deploy To AKS'
+        steps:
+          - task: KubernetesManifest@1
+            inputs:
+              action: 'deploy'
+              connectionType: 'kubernetesServiceConnection'
+              kubernetesServiceConnection: 'k8-con'
+              namespace: 'default'
+              manifests: 'ds.yml'
